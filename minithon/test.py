@@ -4,6 +4,9 @@ from pprint import pprint
 from pathlib import Path
 import time
 
+from minithon.parser.main import Parser
+from minithon.parser.types import Program
+
 CURR_ROOT_DIR = Path(__file__).parent
 
 
@@ -39,6 +42,18 @@ def test_lexer(
             if show_output:
                 print(e)
     return tokens
+
+def test_parser(source_code: str | None = None, show_output=True) -> Program:
+    if source_code is None:
+        source_code = get_source_code()
+    tokens = test_lexer(source_code, True, True)
+    parser = Parser(tokens, source_code)
+    prt = print_runtime_later("Parser")
+    program = parser.parse()
+    if show_output:
+        prt()
+        program.print_parse_tree()
+    return program
 
 
 if __name__ == "__main__":

@@ -37,7 +37,7 @@ class TokenType(Enum):
     # Loops
     WHILE = r"\bwhile\b"
     BREAK = r"\bbreak\b"
-    CONTINUE = r"\bcontinue\b"
+    CONTINUE = r"\bcontinue\b"  
 
     # Operators
     # Arithmetic
@@ -46,6 +46,7 @@ class TokenType(Enum):
     MULTIPLY = r"\*"
     DIVIDE = r"/"
     MODULUS = r"%"
+
     # Logical
     EQUAL = r"=="
     GREATER_THAN_OR_EQUAL = r">="
