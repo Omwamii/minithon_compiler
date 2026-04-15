@@ -8,7 +8,6 @@ from minithon.parser.main import Parser
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compile Minithon source to IR")
     parser.add_argument("source", nargs="?", default=None, help="Path to .mipy file")
-    args = parser.parse_args()
 
     parser.add_argument(
         "--tokens",
@@ -20,6 +19,7 @@ def main() -> None:
         action="store_true",
         help="Print parse tree before intermediate code",
     )
+    args = parser.parse_args()
 
     source_path = (
         Path(args.source) if args.source is not None else Path(__file__).parent / "test_code.mipy"

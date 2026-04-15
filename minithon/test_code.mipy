@@ -11,5 +11,3 @@ else:
             is_true = False
             break
         i = i + 6
-
-x ??
