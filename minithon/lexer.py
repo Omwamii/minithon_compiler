@@ -72,6 +72,8 @@ class TokenType(Enum):
     COLON = r":"
     NEWLINE = r"\n"
     WHITESPACE = r"\s"
+    INDENT = "__INDENT__"
+    DEDENT = "__DEDENT__"
 
     # Misc
     PASS = r"\bpass\b"
@@ -81,7 +83,11 @@ class TokenType(Enum):
 
 @cache
 def all_tokens_regex() -> str:
-    tokens_specification = [(t.name, t.value) for t in TokenType]
+    tokens_specification = [
+        (t.name, t.value)
+        for t in TokenType
+        if t not in (TokenType.INDENT, TokenType.DEDENT)
+    ]
     combined = "|".join(
         f"(?P<{name}>{pattern})" for name, pattern in tokens_specification
     )
@@ -102,7 +108,7 @@ class UnrecognizedToken(CommonException):
 def tokenize(
     code: str, stop_on_error=False
 ) -> tuple[list[Token], list[UnrecognizedToken]]:
-    tokens: list[Token] = []
+    raw_tokens: list[Token] = []
     pos = 0
     exceptions: list[UnrecognizedToken] = []
     for match_object in re.finditer(all_tokens_regex(), code):        
@@ -118,7 +124,7 @@ def tokenize(
         kind = cast(str, match_object.lastgroup)
         value = match_object.group()
         token = Token(value, TokenType[kind], pos)
-        tokens.append(token)
+        raw_tokens.append(token)
         pos = match_object.end()
 
     if pos != len(code):
@@ -129,4 +135,50 @@ def tokenize(
         if stop_on_error:
             raise e
         exceptions.append(e)
+    tokens: list[Token] = []
+    indent_stack = [0]
+    at_line_start = True
+    pending_indent = 0
+
+    for token in raw_tokens:
+        if token.type == TokenType.EOF:
+            while len(indent_stack) > 1:
+                indent_stack.pop()
+                tokens.append(Token("", TokenType.DEDENT, token.position))
+            tokens.append(token)
+            continue
+
+        if token.type == TokenType.WHITESPACE:
+            if at_line_start:
+                pending_indent += len(token.lexeme.expandtabs(4))
+            continue
+
+        if at_line_start:
+
+            if token.type == TokenType.NEWLINE:
+                pending_indent = 0
+                tokens.append(token)
+                continue
+
+            if token.type == TokenType.COMMENT:
+                pending_indent = 0
+                at_line_start = False
+                tokens.append(token)
+                continue
+
+            current_indent = indent_stack[-1]
+            if pending_indent > current_indent:
+                indent_stack.append(pending_indent)
+                tokens.append(Token(" " * pending_indent, TokenType.INDENT, token.position))
+            elif pending_indent < current_indent:
+                while len(indent_stack) > 1 and pending_indent < indent_stack[-1]:
+                    indent_stack.pop()
+                    tokens.append(Token("", TokenType.DEDENT, token.position))
+            pending_indent = 0
+            at_line_start = False
+
+        tokens.append(token)
+        if token.type == TokenType.NEWLINE:
+            at_line_start = True
+
     return tokens, exceptions

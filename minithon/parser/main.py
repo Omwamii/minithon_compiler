@@ -22,6 +22,7 @@ class Parser:
         self.current_node: Node
         self.source_code = source_code
         self.block_id = 0
+        self.current_indent = 0
 
     def raise_syntax_error(self, msg: str) -> NoReturn:
         raise SyntaxError(msg, self.source_code, self.current_token.position)
@@ -35,17 +36,32 @@ class Parser:
         return program_
 
     def get_indent(self) -> int:
-        indent = 0
-        # Monkey patch to prevent get_indent() from modifying indents such that other blocks can't see the changes
+        indent = self.current_indent
         token_index = self.token_index
-        while self.match(TokenType.NEWLINE, False, False):
+        current_indent = self.current_indent
+        current_token = self.current_token if self.token_index >= 0 else None
+
+        while self.match(
+            TokenType.NEWLINE, False, False, ignore_indent=False, ignore_dedent=False
+        ):
             pass
-        while self.match(TokenType.WHITESPACE, False, False):
-            indent += 1
-            while self.match(TokenType.NEWLINE, False, False):
-                indent = 0
+        while True:
+            if self.match(
+                TokenType.INDENT, False, False, ignore_indent=False, ignore_dedent=False
+            ):
+                indent += 1
+                continue
+            if self.match(
+                TokenType.DEDENT, False, False, ignore_indent=False, ignore_dedent=False
+            ):
+                indent -= 1
+                continue
+            break
+
         self.token_index = token_index
-        self.current_token = self.tokens[token_index]
+        self.current_indent = current_indent
+        if current_token is not None:
+            self.current_token = current_token
         return indent
 
     def block(self, prev_indent: int) -> Block | None:
@@ -68,7 +84,12 @@ class Parser:
         return block_
 
     def match(
-        self, token_type: TokenType, ignore_newline=True, ignore_whitespace=True
+        self,
+        token_type: TokenType,
+        ignore_newline=True,
+        ignore_whitespace=True,
+        ignore_indent=True,
+        ignore_dedent=True,
     ) -> bool:
         if self.token_index > len(self.tokens):
             return False
@@ -79,13 +100,23 @@ class Parser:
             self.current_token.type == TokenType.COMMENT
             or (ignore_newline and self.current_token.type == TokenType.NEWLINE)
             or (ignore_whitespace and self.current_token.type == TokenType.WHITESPACE)
+            or (ignore_indent and self.current_token.type == TokenType.INDENT)
+            or (ignore_dedent and self.current_token.type == TokenType.DEDENT)
         ):
+            if self.current_token.type == TokenType.INDENT:
+                self.current_indent += 1
+            if self.current_token.type == TokenType.DEDENT:
+                self.current_indent -= 1
             matched = self.match(token_type)
 
         else:
             matched = self.current_token.type == token_type
         if matched:
             return True
+        if self.current_token.type == TokenType.INDENT:
+            self.current_indent -= 1
+        if self.current_token.type == TokenType.DEDENT:
+            self.current_indent += 1
         self.token_index -= 1
         self.current_token = self.tokens[self.token_index]
         return False
