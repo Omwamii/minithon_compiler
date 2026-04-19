@@ -1,9 +1,30 @@
 from pathlib import Path
 import argparse
-from pprint import pprint
 
 from minithon.lexer import tokenize
 from minithon.parser.main import Parser
+
+def print_tokens_table(tokens: list, source_code: str) -> None:
+    headers = ("Line", "Position", "Lexeme", "Tokentype")
+    rows: list[tuple[str, str, str, str]] = []
+
+    for token in tokens:
+        line = str(source_code.count("\n", 0, token.position) + 1)
+        rows.append((line, str(token.position), repr(token.lexeme), token.type.name))
+
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for idx, cell in enumerate(row):
+            widths[idx] = max(widths[idx], len(cell))
+
+    def fmt(row: tuple[str, str, str, str]) -> str:
+        return " | ".join(cell.ljust(widths[idx]) for idx, cell in enumerate(row))
+
+    print(fmt(headers))
+    print("-+-".join("-" * width for width in widths))
+    for row in rows:
+        print(fmt(row))
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compile Minithon source to IR")
@@ -33,7 +54,7 @@ def main() -> None:
         raise SystemExit(1)
     
     if args.tokens:
-        pprint(tokens)
+        print_tokens_table(tokens, source_code)
         return
     
     program = Parser(tokens, source_code).parse()
