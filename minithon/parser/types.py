@@ -38,9 +38,9 @@ class NodeWrapper:
 class Expression(NodeWrapper):
     def __init__(
         self,
-        left_operand: "Token | Expression",
+        left_operand: "Token | Expression | UnaryExpression",
         operator: "Token | None" = None,
-        right_operand: "Token | Expression | None" = None,
+        right_operand: "Token | Expression | UnaryExpression | None" = None,
     ) -> None:
         self.left_operand = left_operand
         self.operator = operator
@@ -56,7 +56,7 @@ class Expression(NodeWrapper):
         right_operand: str | None = None
         if isinstance(self.right_operand, Token):
             right_operand = self.right_operand.lexeme
-        elif isinstance(self.right_operand, Expression):
+        elif isinstance(self.right_operand, (Expression, UnaryExpression)):
             right_operand = str(self.right_operand)
         operator = self.operator.lexeme if isinstance(self.operator, Token) else None
         string = (
@@ -67,9 +67,22 @@ class Expression(NodeWrapper):
         return string
 
 
+class UnaryExpression(NodeWrapper):
+    def __init__(self, operator: Token, operand: "Expression | UnaryExpression") -> None:
+        self.operator = operator
+        self.operand = operand
+        super().__init__([operand])
+
+    def __str__(self) -> str:
+        return f"{self.operator.lexeme} {self.operand}"
+
+
+ExprType = Expression | UnaryExpression
+
+
 class ControlFlowStmtBlock(NodeWrapper):
     def __init__(
-        self, keyword: Token, expression: Expression | None, block: "Block"
+        self, keyword: Token, expression: ExprType | None, block: "Block"
     ) -> None:
         self.keyword = keyword
         self.expression = expression
@@ -121,7 +134,7 @@ class AssignmentStatement(NodeWrapper):
     def __init__(
         self,
         identifier_token: Token,
-        expression: Expression,
+        expression: ExprType,
     ) -> None:
         self.identifier = identifier_token
         identifier_expression = Expression(identifier_token)

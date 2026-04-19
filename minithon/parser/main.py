@@ -1,244 +1,297 @@
 from typing import NoReturn
+
 from minithon.lexer import Token, TokenType
 from minithon.parser.types import (
-    Node,
-    Expression,
-    ControlFlowStmtBlock,
-    IfStatementBlock,
-    GenericStatement,
     AssignmentStatement,
-    StatementType,
     Block,
+    ControlFlowStmtBlock,
+    ExprType,
+    Expression,
+    GenericStatement,
+    IfStatementBlock,
     Program,
+    StatementType,
     SyntaxError,
+    UnaryExpression,
 )
 
 
 class Parser:
     def __init__(self, tokens: list[Token], source_code: str) -> None:
         self.tokens = tokens
-        self.current_token: Token
-        self.token_index = -1
-        self.current_node: Node
         self.source_code = source_code
+        self.token_index = 0
         self.block_id = 0
-        self.current_indent = 0
-
-    def raise_syntax_error(self, msg: str) -> NoReturn:
-        raise SyntaxError(msg, self.source_code, self.current_token.position)
 
     def parse(self) -> Program:
-        return self.program()
-
-    def program(self) -> Program:
-        block = self.block(-1)
-        program_ = Program(block)
-        return program_
-
-    def get_indent(self) -> int:
-        indent = self.current_indent
-        token_index = self.token_index
-        current_indent = self.current_indent
-        current_token = self.current_token if self.token_index >= 0 else None
-
-        while self.match(
-            TokenType.NEWLINE, False, False, ignore_indent=False, ignore_dedent=False
-        ):
+        while self.match(TokenType.NEWLINE) is not None:
             pass
-        while True:
-            if self.match(
-                TokenType.INDENT, False, False, ignore_indent=False, ignore_dedent=False
-            ):
-                indent += 1
-                continue
-            if self.match(
-                TokenType.DEDENT, False, False, ignore_indent=False, ignore_dedent=False
-            ):
-                indent -= 1
-                continue
-            break
+        statements = self.statement_list(stop_tokens={TokenType.EOF}, indent=0)
+        self.expect(TokenType.EOF, "Expected end of file")
+        return Program(self.new_block(statements, indent=0))
 
-        self.token_index = token_index
-        self.current_indent = current_indent
-        if current_token is not None:
-            self.current_token = current_token
-        return indent
-
-    def block(self, prev_indent: int) -> Block | None:
-        indent = self.get_indent()
+    def new_block(self, statements: list[StatementType], indent: int) -> Block:
         self.block_id += 1
-        block_id_buffer = self.block_id
-        statements: list[StatementType] = []
-        statement = self.statement(indent)
-        while statement is not None:
-            statements.append(statement)
-            new_indent = self.get_indent()
-            if new_indent < indent:
-                break
-            statement = self.statement(indent)
-        if not statements:
-            self.block_id -= 1
-            return None
+        return Block(statements, self.block_id, indent)
 
-        block_ = Block(statements, block_id_buffer, indent)
-        return block_
+    def raise_syntax_error(self, msg: str, token: Token | None = None) -> NoReturn:
+        err_token = token if token is not None else self.peek(skip_comments=True)
+        raise SyntaxError(
+            msg,
+            self.source_code,
+            err_token.position,
+            print_token=err_token.type != TokenType.EOF,
+        )
 
-    def match(
-        self,
-        token_type: TokenType,
-        ignore_newline=True,
-        ignore_whitespace=True,
-        ignore_indent=True,
-        ignore_dedent=True,
-    ) -> bool:
-        if self.token_index > len(self.tokens):
-            return False
-        self.token_index += 1
-        self.current_token = self.tokens[self.token_index]
-        matched = False
-        if (
-            self.current_token.type == TokenType.COMMENT
-            or (ignore_newline and self.current_token.type == TokenType.NEWLINE)
-            or (ignore_whitespace and self.current_token.type == TokenType.WHITESPACE)
-            or (ignore_indent and self.current_token.type == TokenType.INDENT)
-            or (ignore_dedent and self.current_token.type == TokenType.DEDENT)
+    def peek(self, skip_comments: bool = True) -> Token:
+        idx = self.token_index
+        while (
+            skip_comments
+            and idx < len(self.tokens)
+            and self.tokens[idx].type == TokenType.COMMENT
         ):
-            if self.current_token.type == TokenType.INDENT:
-                self.current_indent += 1
-            if self.current_token.type == TokenType.DEDENT:
-                self.current_indent -= 1
-            matched = self.match(token_type)
+            idx += 1
+        if idx >= len(self.tokens):
+            return self.tokens[-1]
+        return self.tokens[idx]
 
-        else:
-            matched = self.current_token.type == token_type
-        if matched:
-            return True
-        if self.current_token.type == TokenType.INDENT:
-            self.current_indent -= 1
-        if self.current_token.type == TokenType.DEDENT:
-            self.current_indent += 1
-        self.token_index -= 1
-        self.current_token = self.tokens[self.token_index]
-        return False
+    def advance(self, skip_comments: bool = True) -> Token:
+        token = self.peek(skip_comments=skip_comments)
+        if skip_comments:
+            while (
+                self.token_index < len(self.tokens)
+                and self.tokens[self.token_index].type == TokenType.COMMENT
+            ):
+                self.token_index += 1
+        if self.token_index < len(self.tokens):
+            self.token_index += 1
+        return token
 
-    def generic_statement(
-        self, token_type: TokenType, string_repr: str
-    ) -> GenericStatement | None:
-        if not self.match(token_type):
+    def match(self, token_type: TokenType) -> Token | None:
+        token = self.peek(skip_comments=True)
+        if token.type != token_type:
             return None
-        stmt = GenericStatement(self.current_token, string_repr)
+        return self.advance(skip_comments=True)
+
+    def expect(self, token_type: TokenType, msg: str) -> Token:
+        token = self.match(token_type)
+        if token is None:
+            found = self.peek(skip_comments=True).type.name
+            self.raise_syntax_error(f"{msg} (found {found}, expected {token_type.name})")
+        return token
+
+    def is_statement_start(self, token_type: TokenType) -> bool:
+        return token_type in (
+            TokenType.IDENTIFIER,
+            TokenType.IF,
+            TokenType.WHILE,
+            TokenType.PASS,
+            TokenType.BREAK,
+            TokenType.CONTINUE,
+        )
+
+    # P -> SL EOF
+    # SL -> S SL_TAIL
+    # SL_TAIL -> S SL_TAIL | epsilon
+    def statement_list(
+        self, stop_tokens: set[TokenType], indent: int
+    ) -> list[StatementType]:
+        statements: list[StatementType] = []
+        while True:
+            lookahead = self.peek(skip_comments=True)
+            if lookahead.type in stop_tokens:
+                break
+            if not self.is_statement_start(lookahead.type):
+                self.raise_syntax_error("Expected statement", lookahead)
+            statements.append(self.statement(indent))
+
+        if not statements:
+            self.raise_syntax_error("Expected statement", self.peek(skip_comments=True))
+
+        return statements
+
+    # S -> SIMPLE NEWLINE | COMPOUND
+    # SIMPLE -> AS | pass | break | continue
+    # COMPOUND -> IS | WS
+    def statement(self, indent: int) -> StatementType:
+        lookahead = self.peek(skip_comments=True).type
+        if lookahead == TokenType.IF:
+            return self.if_statement(indent)
+        if lookahead == TokenType.WHILE:
+            return self.while_statement(indent)
+
+        stmt: StatementType
+        if lookahead == TokenType.IDENTIFIER:
+            stmt = self.assignment_statement()
+        elif lookahead == TokenType.PASS:
+            stmt = GenericStatement(self.advance(), "PASS")
+        elif lookahead == TokenType.BREAK:
+            stmt = GenericStatement(self.advance(), "BREAK")
+        elif lookahead == TokenType.CONTINUE:
+            stmt = GenericStatement(self.advance(), "CONTINUE")
+        else:
+            self.raise_syntax_error("Expected statement")
+
+        # Simple statements should end with NEWLINE. We also allow implicit
+        # line termination before DEDENT/EOF for files without trailing newline.
+        if self.match(TokenType.NEWLINE) is None:
+            next_type = self.peek(skip_comments=True).type
+            if next_type not in (TokenType.DEDENT, TokenType.EOF):
+                self.raise_syntax_error(
+                    "Expected newline after simple statement",
+                    self.peek(skip_comments=True),
+                )
         return stmt
 
-    def statement(self, indent: int) -> StatementType | None:
-        statement = (
-            self.generic_statement(TokenType.BREAK, "BREAK")
-            or self.generic_statement(TokenType.CONTINUE, "CONTINUE")
-            or self.generic_statement(TokenType.PASS, "PASS")
-            or self.generic_statement(TokenType.COMMENT, "COMMENT")
-            or self.assignment_statement()
-            or self.while_statement_block(indent)
-            or self.if_statement_block(indent)
-        )
-        return statement
-
-    def assignment_statement(self) -> AssignmentStatement | None:
-        if not self.match(TokenType.IDENTIFIER):
-            return None
-        identifier = self.current_token
-        if not self.match(TokenType.ASSIGN):
-            self.raise_syntax_error("Expected assignment operator")
-
+    # AS -> id = E
+    def assignment_statement(self) -> AssignmentStatement:
+        identifier = self.expect(TokenType.IDENTIFIER, "Expected identifier")
+        self.expect(TokenType.ASSIGN, "Expected assignment operator")
         expression = self.expression()
-        if expression is None:
-            self.raise_syntax_error("Expected expression")
-        stmt = AssignmentStatement(identifier, expression)
-        return stmt
+        return AssignmentStatement(identifier, expression)
 
-    def control_flow_stmt_block(
-        self, token_type: TokenType, indent: int, has_expression=True
-    ) -> ControlFlowStmtBlock | None:
-        if not self.match(token_type):
-            return None
-        token = self.current_token
-        expression: Expression | None = None
-        if has_expression:
-            expression = self.expression()
-            if expression is None:
-                self.raise_syntax_error("Expected expression")
-        if not self.match(TokenType.COLON):
-            self.raise_syntax_error("Expected colon")
-        if not self.match(TokenType.NEWLINE, False):
-            self.raise_syntax_error("Expected newline")
-        block = self.block(indent)
-        if block is None:
-            self.raise_syntax_error("Expected code block")
-        stmt_block = ControlFlowStmtBlock(token, expression, block)
-        return stmt_block
+    # B -> NEWLINE INDENT SL DEDENT
+    def block(self, indent: int) -> Block:
+        self.expect(TokenType.NEWLINE, "Expected newline before block")
+        self.expect(TokenType.INDENT, "Expected INDENT to start block")
+        statements = self.statement_list(stop_tokens={TokenType.DEDENT}, indent=indent)
+        self.expect(TokenType.DEDENT, "Expected DEDENT to close block")
+        return self.new_block(statements, indent=indent)
 
-    def if_statement_block(self, indent: int) -> IfStatementBlock | None:
-        if_stmt_block = self.control_flow_stmt_block(TokenType.IF, indent)
-        if if_stmt_block is None:
-            return None
-        elifs: list[ControlFlowStmtBlock] = []
-        elif_stmt_block = self.control_flow_stmt_block(TokenType.ELIF, indent)
-        while elif_stmt_block is not None:
-            elifs.append(elif_stmt_block)
-            elif_stmt_block = self.control_flow_stmt_block(TokenType.ELIF, indent)
-        else_stmt_block = self.control_flow_stmt_block(TokenType.ELSE, indent, False)
-        statement_block = IfStatementBlock(if_stmt_block, elifs, else_stmt_block)
-        return statement_block
+    # IS -> if E : B IS'
+    # IS' -> elif E : B IS' | else : B | epsilon
+    def if_statement(self, indent: int) -> IfStatementBlock:
+        if_token = self.expect(TokenType.IF, "Expected IF")
+        if_expr = self.expression()
+        self.expect(TokenType.COLON, "Expected ':' after if condition")
+        if_block = self.block(indent + 1)
+        if_stmt = ControlFlowStmtBlock(if_token, if_expr, if_block)
 
-    def while_statement_block(self, indent: int) -> ControlFlowStmtBlock | None:
-        stmt_block = self.control_flow_stmt_block(TokenType.WHILE, indent)
-        return stmt_block
+        elif_blocks: list[ControlFlowStmtBlock] = []
+        while self.peek(skip_comments=True).type == TokenType.ELIF:
+            elif_token = self.advance()
+            elif_expr = self.expression()
+            self.expect(TokenType.COLON, "Expected ':' after elif condition")
+            elif_block = self.block(indent + 1)
+            elif_blocks.append(ControlFlowStmtBlock(elif_token, elif_expr, elif_block))
 
-    def factor(self) -> bool:
-        return (
-            self.match(TokenType.BOOL_TRUE)
-            or self.match(TokenType.BOOL_FALSE)
-            or self.match(TokenType.IDENTIFIER)
-            or self.match(TokenType.STRING)
-            or self.match(TokenType.INTEGER)
-            or self.match(TokenType.FLOAT)
+        else_block: ControlFlowStmtBlock | None = None
+        if self.peek(skip_comments=True).type == TokenType.ELSE:
+            else_token = self.advance()
+            self.expect(TokenType.COLON, "Expected ':' after else")
+            parsed_block = self.block(indent + 1)
+            else_block = ControlFlowStmtBlock(else_token, None, parsed_block)
+
+        return IfStatementBlock(if_stmt, elif_blocks, else_block)
+
+    # WS -> while E : B
+    def while_statement(self, indent: int) -> ControlFlowStmtBlock:
+        while_token = self.expect(TokenType.WHILE, "Expected WHILE")
+        expression = self.expression()
+        self.expect(TokenType.COLON, "Expected ':' after while condition")
+        parsed_block = self.block(indent + 1)
+        return ControlFlowStmtBlock(while_token, expression, parsed_block)
+
+    # E -> OrExpr | string
+    def expression(self) -> ExprType:
+        if self.peek(skip_comments=True).type == TokenType.STRING:
+            return Expression(self.advance())
+        return self.or_expr()
+
+    # OrExpr -> AndExpr OrExpr'
+    # OrExpr' -> or AndExpr OrExpr' | epsilon
+    def or_expr(self) -> ExprType:
+        left = self.and_expr()
+        while True:
+            op = self.match(TokenType.OR)
+            if op is None:
+                break
+            right = self.and_expr()
+            left = Expression(left, op, right)
+        return left
+
+    # AndExpr -> NotExpr AndExpr'
+    # AndExpr' -> and NotExpr AndExpr' | epsilon
+    def and_expr(self) -> ExprType:
+        left = self.not_expr()
+        while True:
+            op = self.match(TokenType.AND)
+            if op is None:
+                break
+            right = self.not_expr()
+            left = Expression(left, op, right)
+        return left
+
+    # NotExpr -> not NotExpr | CompExpr | True | False
+    def not_expr(self) -> ExprType:
+        op = self.match(TokenType.NOT)
+        if op is not None:
+            right = self.not_expr()
+            return UnaryExpression(op, right)
+
+        bool_true = self.match(TokenType.BOOL_TRUE)
+        if bool_true is not None:
+            return Expression(bool_true)
+
+        bool_false = self.match(TokenType.BOOL_FALSE)
+        if bool_false is not None:
+            return Expression(bool_false)
+
+        return self.comp_expr()
+
+    # CompExpr -> AE CompExpr'
+    # CompExpr' -> RO AE CompExpr' | epsilon
+    def comp_expr(self) -> ExprType:
+        left = self.arithmetic_expr()
+        while self.peek(skip_comments=True).type in (
+            TokenType.EQUAL,
+            TokenType.NOT_EQUAL,
+            TokenType.LESS_THAN,
+            TokenType.GREATER_THAN,
+            TokenType.LESS_THAN_OR_EQUAL,
+            TokenType.GREATER_THAN_OR_EQUAL,
+        ):
+            op = self.advance()
+            right = self.arithmetic_expr()
+            left = Expression(left, op, right)
+        return left
+
+    # AE -> T AE'
+    # AE' -> + T AE' | - T AE' | epsilon
+    def arithmetic_expr(self) -> ExprType:
+        left = self.term()
+        while self.peek(skip_comments=True).type in (TokenType.ADD, TokenType.SUBTRACT):
+            op = self.advance()
+            right = self.term()
+            left = Expression(left, op, right)
+        return left
+
+    # T -> F T'
+    # T' -> * F T' | / F T' | % F T' | epsilon
+    def term(self) -> ExprType:
+        left = self.factor()
+        while self.peek(skip_comments=True).type in (
+            TokenType.MULTIPLY,
+            TokenType.DIVIDE,
+            TokenType.MODULUS,
+        ):
+            op = self.advance()
+            right = self.factor()
+            left = Expression(left, op, right)
+        return left
+
+    # F -> id | int | float | ( E )
+    def factor(self) -> ExprType:
+        token_type = self.peek(skip_comments=True).type
+        if token_type in (TokenType.IDENTIFIER, TokenType.INTEGER, TokenType.FLOAT):
+            return Expression(self.advance())
+
+        if self.match(TokenType.LPAREN) is not None:
+            expr = self.expression()
+            self.expect(TokenType.RPAREN, "Expected closing parenthesis")
+            return expr
+
+        self.raise_syntax_error(
+            "Expected identifier, number, or parenthesized expression",
+            self.peek(skip_comments=True),
         )
-
-    def expression(self) -> Expression | None:
-        def match_ops() -> bool:
-            return (
-                self.match(TokenType.OR)
-                or self.match(TokenType.AND)
-                or self.match(TokenType.NOT)
-                or self.match(TokenType.DIVIDE)
-                or self.match(TokenType.MULTIPLY)
-                or self.match(TokenType.ADD)
-                or self.match(TokenType.SUBTRACT)
-                or self.match(TokenType.EQUAL)
-                or self.match(TokenType.NOT_EQUAL)
-                or self.match(TokenType.MODULUS)
-                or self.match(TokenType.GREATER_THAN)
-                or self.match(TokenType.LESS_THAN)
-                or self.match(TokenType.GREATER_THAN_OR_EQUAL)
-                or self.match(TokenType.LESS_THAN_OR_EQUAL)
-            )
-
-        left_operand: Expression | Token
-        if self.match(TokenType.LPAREN):
-            expression = self.expression()
-            if expression is None:
-                self.raise_syntax_error("Expected expression")
-            left_operand = expression
-            if not self.match(TokenType.RPAREN):
-                self.raise_syntax_error("Expected closing paranthesis")
-        else:
-            if not self.factor():
-                return None
-            left_operand = self.current_token
-        operator = None
-        right_operand = None
-        if match_ops():
-            operator = self.current_token
-            right_operand = self.expression()
-            if right_operand is None:
-                self.raise_syntax_error("Expected expression")
-        expression = Expression(left_operand, operator, right_operand)
-        return expression
