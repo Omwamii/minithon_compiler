@@ -157,7 +157,9 @@ def tokenize(
 
             if token.type == TokenType.NEWLINE:
                 pending_indent = 0
-                tokens.append(token)
+                # Collapse runs of blank-line newlines into a single NEWLINE token.
+                if not tokens or tokens[-1].type != TokenType.NEWLINE:
+                    tokens.append(token)
                 continue
 
             if token.type == TokenType.COMMENT:
