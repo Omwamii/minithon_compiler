@@ -1,0 +1,14 @@
+# This is a comment
+number = 7
+is_true = True
+if number <= 1:
+    is_true = False
+elif number % 2 == 0 or number % 3 == 0:
+    is_true = False
+else:
+    i = 5
+    while i * i <= number:
+        if number % i == 0 or number % (i + 2) == 0:
+            is_true = False
+            break
+        i = i + 6

@@ -40,6 +40,11 @@ def main() -> None:
         action="store_true",
         help="Print parse tree before intermediate code",
     )
+    parser.add_argument(
+        "--print-parse-table",
+        action="store_true",
+        help="Print parse table before intermediate code",
+    )
     args = parser.parse_args()
 
     source_path = (
@@ -60,6 +65,8 @@ def main() -> None:
     program = Parser(tokens, source_code).parse()
     if args.parse_tree:
         program.print_parse_tree()
+    if args.print_parse_table:
+        program.print_parse_table()
 
 if __name__ == "__main__":
     main()
