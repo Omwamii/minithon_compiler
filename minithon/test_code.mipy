@@ -1,3 +1,17 @@
-x = 1
-elif True:
-    x = 2
+number = 7
+is_true = True
+x = 5  + 6 * "string"
+
+a = not x
+
+if number <= 1:
+    is_true = False
+elif number % 2 == 0 or number % 3 == 0:
+    is_true = False
+else:
+    i = 5
+    while i * i <= number:
+        if number % i == 0 or number % (i + 2) == 0:
+            is_true = False
+            break
+        i = i + 6
