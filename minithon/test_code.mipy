@@ -1,6 +1,6 @@
 number = 7  
 is_true = True
-ok = x > 1 and y < 10 or True
+x = 5  + 6 * 2
 
 if number <= 1:
     is_true = False
