@@ -23,8 +23,27 @@ class Parser:
         self.source_code = source_code
         self.block_id = 0
 
-    def raise_syntax_error(self, msg: str) -> NoReturn:
-        raise SyntaxError(msg, self.source_code, self.current_token.position)
+    def raise_syntax_error(self, msg: str, position: int | None = None) -> NoReturn:
+        error_position = (
+            self.current_token.position if position is None else position
+        )
+        raise SyntaxError(msg, self.source_code, error_position)
+
+    def lookahead_position(
+        self, ignore_newline=True, ignore_whitespace=True
+    ) -> int:
+        lookahead_index = self.token_index + 1
+        while lookahead_index < len(self.tokens):
+            token = self.tokens[lookahead_index]
+            if (
+                token.type == TokenType.COMMENT
+                or (ignore_newline and token.type == TokenType.NEWLINE)
+                or (ignore_whitespace and token.type == TokenType.WHITESPACE)
+            ):
+                lookahead_index += 1
+                continue
+            return token.position
+        return self.current_token.position
 
     def parse(self) -> Program:
         return self.program()
@@ -110,7 +129,10 @@ class Parser:
             if not self.match(TokenType.NEWLINE, False) and not self.match(
                 TokenType.EOF, False
             ):
-                self.raise_syntax_error("Expected newline")
+                self.raise_syntax_error(
+                    "Expected newline",
+                    self.lookahead_position(ignore_newline=False),
+                )
             return statement
         statement = self.while_statement_block(indent) or self.if_statement_block(indent)
         return statement
@@ -142,7 +164,9 @@ class Parser:
         if not self.match(TokenType.COLON):
             self.raise_syntax_error("Expected colon")
         if not self.match(TokenType.NEWLINE, False):
-            self.raise_syntax_error("Expected newline")
+            self.raise_syntax_error(
+                "Expected newline", self.lookahead_position(ignore_newline=False)
+            )
         block = self.block(indent)
         if block is None:
             self.raise_syntax_error("Expected code block")
