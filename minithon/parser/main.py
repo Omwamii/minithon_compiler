@@ -22,6 +22,7 @@ class Parser:
         self.current_node: Node
         self.source_code = source_code
         self.block_id = 0
+        self.indent_level = 0
 
     def raise_syntax_error(
         self,
@@ -29,12 +30,25 @@ class Parser:
         position: int | None = None,
         ignore_newline: bool = False,
         ignore_whitespace: bool = True,
+        print_token: bool = True,
     ) -> NoReturn:
         if position is None:
             error_position = self.lookahead_position(ignore_newline, ignore_whitespace)
         else:
             error_position = position
-        raise SyntaxError(msg, self.source_code, error_position)
+        raise SyntaxError(msg, self.source_code, error_position, print_token=print_token)
+
+    def raise_unexpected_token(
+        self, expected: str, token: Token | None = None
+    ) -> NoReturn:
+        observed_token = token if token is not None else self.lookahead_token()
+        observed = observed_token.lexeme if observed_token is not None else "EOF"
+        position = observed_token.position if observed_token is not None else None
+        self.raise_syntax_error(
+            f'Unexpected token "{observed}" expected "{expected}"',
+            position=position,
+            print_token=False,
+        )
 
     def lookahead_position(
         self, ignore_newline=True, ignore_whitespace=True
@@ -74,46 +88,36 @@ class Parser:
         return self.program()
 
     def program(self) -> Program:
-        block = self.block(-1)
-        if not self.match(TokenType.EOF):
-            token = self.lookahead_token()
-            token_lexeme = token.lexeme if token is not None else "EOF"
-            self.raise_syntax_error(f'Unexpected token "{token_lexeme}"')
-        program_ = Program(block)
-        return program_
-
-    def get_indent(self) -> int:
-        indent = 0
-        # Monkey patch to prevent get_indent() from modifying indents such that other blocks can't see the changes
-        token_index = self.token_index
         while self.match(TokenType.NEWLINE, False, False):
             pass
-        while self.match(TokenType.WHITESPACE, False, False):
-            indent += 1
-            while self.match(TokenType.NEWLINE, False, False):
-                indent = 0
-        self.token_index = token_index
-        self.current_token = self.tokens[token_index]
-        return indent
-
-    def block(self, prev_indent: int) -> Block | None:
-        indent = self.get_indent()
-        self.block_id += 1
-        block_id_buffer = self.block_id
-        statements: list[StatementType] = []
-        statement = self.statement(indent)
-        while statement is not None:
-            statements.append(statement)
-            new_indent = self.get_indent()
-            if new_indent < indent:
-                break
-            statement = self.statement(indent)
+        statements = self.statement_list({TokenType.EOF})
         if not statements:
-            self.block_id -= 1
-            return None
+            self.raise_syntax_error("Expected statement")
+        if not self.match(TokenType.EOF):
+            self.raise_unexpected_token("EOF")
+        return Program(self.new_block(statements, 0))
 
-        block_ = Block(statements, block_id_buffer, indent)
-        return block_
+    def new_block(self, statements: list[StatementType], indent: int) -> Block:
+        self.block_id += 1
+        return Block(statements, self.block_id, indent)
+
+    def statement_list(self, stop_tokens: set[TokenType]) -> list[StatementType]:
+        statements: list[StatementType] = []
+        while True:
+            lookahead = self.lookahead_token(ignore_newline=False, ignore_whitespace=False)
+            if lookahead is None or lookahead.type in stop_tokens:
+                break
+            statement = self.statement()
+            if statement is None:
+                if (
+                    TokenType.DEDENT in stop_tokens
+                    and lookahead.type in (TokenType.ELSE, TokenType.ELIF)
+                ):
+                    self.raise_unexpected_token("DEDENT", lookahead)
+                self.raise_unexpected_token("statement", lookahead)
+            statements.append(statement)
+
+        return statements
 
     def match(
         self, token_type: TokenType, ignore_newline=True, ignore_whitespace=True
@@ -146,7 +150,7 @@ class Parser:
         stmt = GenericStatement(self.current_token, string_repr)
         return stmt
 
-    def statement(self, indent: int) -> StatementType | None:
+    def statement(self) -> StatementType | None:
         statement = (
             self.generic_statement(TokenType.BREAK, "BREAK")
             or self.generic_statement(TokenType.CONTINUE, "CONTINUE")
@@ -156,13 +160,15 @@ class Parser:
         )
         if statement is not None:
             if not self.match(TokenType.NEWLINE, False):
-                lookahead = self.lookahead_token()
-                if lookahead is None or lookahead.type != TokenType.EOF:
+                lookahead = self.lookahead_token(ignore_newline=False)
+                if lookahead is None or lookahead.type not in (
+                    TokenType.DEDENT,
+                    TokenType.EOF,
+                ):
                     self.raise_syntax_error("Expected newline")
             return statement
-        statement = self.while_statement_block(indent) or self.if_statement_block(indent)
+        statement = self.while_statement_block() or self.if_statement_block()
         return statement
-        
 
     def assignment_statement(self) -> AssignmentStatement | None:
         if not self.match(TokenType.IDENTIFIER):
@@ -177,8 +183,24 @@ class Parser:
         stmt = AssignmentStatement(identifier, expression)
         return stmt
 
+    def block(self) -> Block:
+        if not self.match(TokenType.NEWLINE, False):
+            self.raise_syntax_error("Expected newline")
+        if not self.match(TokenType.INDENT, False):
+            self.raise_syntax_error("Expected INDENT")
+
+        self.indent_level += 1
+        statements = self.statement_list({TokenType.DEDENT})
+        if not statements:
+            self.raise_syntax_error("Expected statement in block")
+        if not self.match(TokenType.DEDENT, False):
+            self.raise_syntax_error("Expected DEDENT")
+        block = self.new_block(statements, self.indent_level)
+        self.indent_level -= 1
+        return block
+
     def control_flow_stmt_block(
-        self, token_type: TokenType, indent: int, has_expression=True
+        self, token_type: TokenType, has_expression=True
     ) -> ControlFlowStmtBlock | None:
         if not self.match(token_type):
             return None
@@ -190,29 +212,25 @@ class Parser:
                 self.raise_syntax_error("Expected expression")
         if not self.match(TokenType.COLON):
             self.raise_syntax_error("Expected colon")
-        if not self.match(TokenType.NEWLINE, False):
-            self.raise_syntax_error("Expected newline")
-        block = self.block(indent)
-        if block is None:
-            self.raise_syntax_error("Expected code block")
+        block = self.block()
         stmt_block = ControlFlowStmtBlock(token, expression, block)
         return stmt_block
 
-    def if_statement_block(self, indent: int) -> IfStatementBlock | None:
-        if_stmt_block = self.control_flow_stmt_block(TokenType.IF, indent)
+    def if_statement_block(self) -> IfStatementBlock | None:
+        if_stmt_block = self.control_flow_stmt_block(TokenType.IF)
         if if_stmt_block is None:
             return None
         elifs: list[ControlFlowStmtBlock] = []
-        elif_stmt_block = self.control_flow_stmt_block(TokenType.ELIF, indent)
+        elif_stmt_block = self.control_flow_stmt_block(TokenType.ELIF)
         while elif_stmt_block is not None:
             elifs.append(elif_stmt_block)
-            elif_stmt_block = self.control_flow_stmt_block(TokenType.ELIF, indent)
-        else_stmt_block = self.control_flow_stmt_block(TokenType.ELSE, indent, False)
+            elif_stmt_block = self.control_flow_stmt_block(TokenType.ELIF)
+        else_stmt_block = self.control_flow_stmt_block(TokenType.ELSE, False)
         statement_block = IfStatementBlock(if_stmt_block, elifs, else_stmt_block)
         return statement_block
 
-    def while_statement_block(self, indent: int) -> ControlFlowStmtBlock | None:
-        stmt_block = self.control_flow_stmt_block(TokenType.WHILE, indent)
+    def while_statement_block(self) -> ControlFlowStmtBlock | None:
+        stmt_block = self.control_flow_stmt_block(TokenType.WHILE)
         return stmt_block
 
     def factor(self) -> bool:
