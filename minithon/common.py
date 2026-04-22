@@ -3,7 +3,7 @@ import re
 
 class CommonException(Exception):
     def __init__(
-        self, msg: str, source_code: str, position: int, print_token=True
+        self, msg: str, source_code: str, position: int, print_token=True, is_syntax_err=False
     ) -> None:
         line_start_pos = (
             source_code.rfind("\n", 0, position) + 1 if position != 0 else 0
@@ -32,6 +32,12 @@ class CommonException(Exception):
         final_err = f":\n{err}"
         line_number = source_code[:position].count("\n") + 1
         token_str = f'\033[32m"{token}"\033[0m ' if print_token and token else ""
-        super().__init__(
-            f"\033[31m{msg} \033[0m{token_str}\033[31mat line {line_number}\033[0m{final_err}"
-        )
+        
+        if is_syntax_err:
+            super().__init__(
+                f"\033[31m{msg} \033[31mat line {line_number}, found \033[0m{token_str}\033[0m{final_err}"
+            )
+        else:
+            super().__init__(
+                f"\033[31m{msg} \033[0m{token_str}\033[31mat line {line_number}\033[0m{final_err}"
+            )

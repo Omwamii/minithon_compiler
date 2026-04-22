@@ -9,7 +9,7 @@ class SyntaxError(CommonException):
     def __init__(
         self, msg: str, source_code: str, position: int, print_token=True
     ) -> None:
-        super().__init__(msg, source_code, position, print_token)
+        super().__init__(msg, source_code, position, print_token, is_syntax_err=True)
 
 
 class Node:
