@@ -54,11 +54,31 @@ class Parser:
             return self.current_token.position
         return 0
 
+    def lookahead_token(
+        self, ignore_newline=True, ignore_whitespace=True
+    ) -> Token | None:
+        lookahead_index = self.token_index + 1
+        while lookahead_index < len(self.tokens):
+            token = self.tokens[lookahead_index]
+            if (
+                token.type == TokenType.COMMENT
+                or (ignore_newline and token.type == TokenType.NEWLINE)
+                or (ignore_whitespace and token.type == TokenType.WHITESPACE)
+            ):
+                lookahead_index += 1
+                continue
+            return token
+        return None
+
     def parse(self) -> Program:
         return self.program()
 
     def program(self) -> Program:
         block = self.block(-1)
+        if not self.match(TokenType.EOF):
+            token = self.lookahead_token()
+            token_lexeme = token.lexeme if token is not None else "EOF"
+            self.raise_syntax_error(f'Unexpected token "{token_lexeme}"')
         program_ = Program(block)
         return program_
 
@@ -135,13 +155,14 @@ class Parser:
             or self.assignment_statement()
         )
         if statement is not None:
-            if not self.match(TokenType.NEWLINE, False) and not self.match(
-                TokenType.EOF, False
-            ):
-                self.raise_syntax_error("Expected newline")
+            if not self.match(TokenType.NEWLINE, False):
+                lookahead = self.lookahead_token()
+                if lookahead is None or lookahead.type != TokenType.EOF:
+                    self.raise_syntax_error("Expected newline")
             return statement
         statement = self.while_statement_block(indent) or self.if_statement_block(indent)
         return statement
+        
 
     def assignment_statement(self) -> AssignmentStatement | None:
         if not self.match(TokenType.IDENTIFIER):
