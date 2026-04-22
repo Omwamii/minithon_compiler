@@ -1,4 +1,5 @@
-number = 7  is_true = True 
+number = 7  
+is_true = True 
 
 if number <= 1:
     is_true = False
