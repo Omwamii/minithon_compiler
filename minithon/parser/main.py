@@ -70,7 +70,7 @@ class Parser:
     def match(
         self, token_type: TokenType, ignore_newline=True, ignore_whitespace=True
     ) -> bool:
-        if self.token_index > len(self.tokens):
+        if self.token_index + 1 >= len(self.tokens):
             return False
         self.token_index += 1
         self.current_token = self.tokens[self.token_index]
@@ -80,7 +80,7 @@ class Parser:
             or (ignore_newline and self.current_token.type == TokenType.NEWLINE)
             or (ignore_whitespace and self.current_token.type == TokenType.WHITESPACE)
         ):
-            matched = self.match(token_type)
+            matched = self.match(token_type, ignore_newline, ignore_whitespace)
 
         else:
             matched = self.current_token.type == token_type
@@ -105,9 +105,14 @@ class Parser:
             or self.generic_statement(TokenType.PASS, "PASS")
             or self.generic_statement(TokenType.COMMENT, "COMMENT")
             or self.assignment_statement()
-            or self.while_statement_block(indent)
-            or self.if_statement_block(indent)
         )
+        if statement is not None:
+            if not self.match(TokenType.NEWLINE, False) and not self.match(
+                TokenType.EOF, False
+            ):
+                self.raise_syntax_error("Expected newline")
+            return statement
+        statement = self.while_statement_block(indent) or self.if_statement_block(indent)
         return statement
 
     def assignment_statement(self) -> AssignmentStatement | None:
@@ -163,40 +168,40 @@ class Parser:
 
     def factor(self) -> bool:
         return (
-            self.match(TokenType.BOOL_TRUE)
-            or self.match(TokenType.BOOL_FALSE)
-            or self.match(TokenType.IDENTIFIER)
-            or self.match(TokenType.STRING)
-            or self.match(TokenType.INTEGER)
-            or self.match(TokenType.FLOAT)
+            self.match(TokenType.BOOL_TRUE, False)
+            or self.match(TokenType.BOOL_FALSE, False)
+            or self.match(TokenType.IDENTIFIER, False)
+            or self.match(TokenType.STRING, False)
+            or self.match(TokenType.INTEGER, False)
+            or self.match(TokenType.FLOAT, False)
         )
 
     def expression(self) -> Expression | None:
         def match_ops() -> bool:
             return (
-                self.match(TokenType.OR)
-                or self.match(TokenType.AND)
-                or self.match(TokenType.NOT)
-                or self.match(TokenType.DIVIDE)
-                or self.match(TokenType.MULTIPLY)
-                or self.match(TokenType.ADD)
-                or self.match(TokenType.SUBTRACT)
-                or self.match(TokenType.EQUAL)
-                or self.match(TokenType.NOT_EQUAL)
-                or self.match(TokenType.MODULUS)
-                or self.match(TokenType.GREATER_THAN)
-                or self.match(TokenType.LESS_THAN)
-                or self.match(TokenType.GREATER_THAN_OR_EQUAL)
-                or self.match(TokenType.LESS_THAN_OR_EQUAL)
+                self.match(TokenType.OR, False)
+                or self.match(TokenType.AND, False)
+                or self.match(TokenType.NOT, False)
+                or self.match(TokenType.DIVIDE, False)
+                or self.match(TokenType.MULTIPLY, False)
+                or self.match(TokenType.ADD, False)
+                or self.match(TokenType.SUBTRACT, False)
+                or self.match(TokenType.EQUAL, False)
+                or self.match(TokenType.NOT_EQUAL, False)
+                or self.match(TokenType.MODULUS, False)
+                or self.match(TokenType.GREATER_THAN, False)
+                or self.match(TokenType.LESS_THAN, False)
+                or self.match(TokenType.GREATER_THAN_OR_EQUAL, False)
+                or self.match(TokenType.LESS_THAN_OR_EQUAL, False)
             )
 
         left_operand: Expression | Token
-        if self.match(TokenType.LPAREN):
+        if self.match(TokenType.LPAREN, False):
             expression = self.expression()
             if expression is None:
                 self.raise_syntax_error("Expected expression")
             left_operand = expression
-            if not self.match(TokenType.RPAREN):
+            if not self.match(TokenType.RPAREN, False):
                 self.raise_syntax_error("Expected closing paranthesis")
         else:
             if not self.factor():
