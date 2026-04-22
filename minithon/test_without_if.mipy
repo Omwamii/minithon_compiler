@@ -1,0 +1,5 @@
+number = 7
+is_true = True
+x = 5  + 6 * 2
+
+a = x not y

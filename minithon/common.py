@@ -35,7 +35,7 @@ class CommonException(Exception):
         
         if is_syntax_err:
             super().__init__(
-                f"\033[31m{msg} \033[31mat line {line_number}, found \033[0m{token_str}\033[0m{final_err}"
+                f"\033[31m{msg} \033[31mat line {line_number}{', found \033[0m{token_str}' if len(token_str) else ''} \033[0m{final_err}"
             )
         else:
             super().__init__(
