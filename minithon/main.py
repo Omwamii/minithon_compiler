@@ -4,26 +4,30 @@ import argparse
 from minithon.lexer import tokenize
 from minithon.parser.main import Parser
 
-def print_tokens_table(tokens: list, source_code: str) -> None:
-    headers = ("Line", "Position", "Lexeme", "Tokentype")
-    rows: list[tuple[str, str, str, str]] = []
+def format_tokens_table(tokens: list[Token]) -> str:
+    headers = ("Lexeme", "Token Type", "Pattern", "Position")
+    rows = [
+        (
+            format_lexeme(token.lexeme),
+            token.type.name,
+            token.type.value,
+            str(token.position),
+        )
+        for token in tokens
+    ]
+    widths = [
+        max(len(header), *(len(row[index]) for row in rows)) if rows else len(header)
+        for index, header in enumerate(headers)
+    ]
 
-    for token in tokens:
-        line = str(source_code.count("\n", 0, token.position) + 1)
-        rows.append((line, str(token.position), repr(token.lexeme), token.type.name))
+    def format_row(row: tuple[str, str, str, str]) -> str:
+        return " | ".join(value.ljust(widths[index]) for index, value in enumerate(row))
 
-    widths = [len(header) for header in headers]
-    for row in rows:
-        for idx, cell in enumerate(row):
-            widths[idx] = max(widths[idx], len(cell))
+    separator = "-+-".join("-" * width for width in widths)
+    lines = [format_row(headers), separator]
+    lines.extend(format_row(row) for row in rows)
+    return "\n".join(lines)
 
-    def fmt(row: tuple[str, str, str, str]) -> str:
-        return " | ".join(cell.ljust(widths[idx]) for idx, cell in enumerate(row))
-
-    print(fmt(headers))
-    print("-+-".join("-" * width for width in widths))
-    for row in rows:
-        print(fmt(row))
 
 
 def main() -> None:
