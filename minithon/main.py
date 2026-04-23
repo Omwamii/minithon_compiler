@@ -4,6 +4,9 @@ import argparse
 from minithon.lexer import tokenize
 from minithon.parser.main import Parser
 
+def format_lexeme(lexeme: str) -> str:
+    return repr(lexeme)
+
 def format_tokens_table(tokens: list[Token]) -> str:
     headers = ("Lexeme", "Token Type", "Pattern", "Position")
     rows = [
