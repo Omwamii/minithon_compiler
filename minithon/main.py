@@ -1,7 +1,7 @@
 from pathlib import Path
 import argparse
 
-from minithon.lexer import tokenize
+from minithon.lexer import tokenize, Token
 from minithon.parser.main import Parser
 
 def format_lexeme(lexeme: str) -> str:
