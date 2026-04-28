@@ -61,8 +61,8 @@ def main() -> None:
         raise SystemExit(1)
     
     if args.tokens:
-        print_tokens_table(tokens, source_code)
-        return
+        print(format_tokens_table(tokens))
+        # return
     
     program = Parser(tokens, source_code).parse()
     if args.parse_tree:

@@ -111,11 +111,10 @@ class Parser:
         # P -> SL EOF
         statements = self.statement_list({TokenType.EOF})
         if not statements:
-            # If you choose grammar variant P -> EOF for empty files, this can be relaxed.
             self.raise_syntax_error("Expected statement")
         if not self.match(TokenType.EOF):
             # Enforce complete consumption: ... EOF
-            self.raise_unexpected_token("EOF")
+            self.raise_unexpected_token(expected="EOF")
         return Program(self.new_block(statements, 0))
 
     def new_block(self, statements: list[StatementType], indent: int) -> Block:
@@ -130,6 +129,7 @@ class Parser:
         statements: list[StatementType] = []
         while True:
             lookahead = self.lookahead_token(ignore_newline=False, ignore_whitespace=False)
+            
             if lookahead is None or lookahead.type in stop_tokens:
                 # SL_TAIL -> epsilon
                 break
@@ -139,8 +139,8 @@ class Parser:
                     TokenType.DEDENT in stop_tokens
                     and lookahead.type in (TokenType.ELSE, TokenType.ELIF)
                 ):
-                    self.raise_unexpected_token("DEDENT", lookahead)
-                self.raise_unexpected_token("statement", lookahead)
+                    self.raise_unexpected_token(expected="DEDENT", token=lookahead)
+                self.raise_unexpected_token(expected="statement", token=lookahead)
             statements.append(statement)
 
         return statements
@@ -191,6 +191,7 @@ class Parser:
             or self.assignment_statement()
         )
         if statement is not None:
+            # Enforcing separator between statements
             if not self.match(TokenType.NEWLINE, False):
                 lookahead = self.lookahead_token(ignore_newline=False)
                 if lookahead is None or lookahead.type not in (
@@ -347,5 +348,6 @@ class Parser:
             right_operand = self.expression()
             if right_operand is None:
                 self.raise_syntax_error("Expected expression")
+
         expression = Expression(left_operand, operator, right_operand)
         return expression

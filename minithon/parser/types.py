@@ -90,15 +90,11 @@ class ControlFlowStmtBlock(NodeWrapper):
         super().__init__([block])
 
     def __str__(self) -> str:
-        statement_string = (
+        return (
             f"{self.keyword.lexeme} {self.expression}:"
             if self.expression is not None
             else f"{self.keyword.lexeme}:"
         )
-        block_string = str(self.block)
-        spaces_count = (len(statement_string) - len(block_string)) // 2
-        string = f"{statement_string}\n{' '*spaces_count}{block_string}"
-        return string
 
 
 class IfStatementBlock(NodeWrapper):
