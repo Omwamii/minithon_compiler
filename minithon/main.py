@@ -1,6 +1,7 @@
 from pathlib import Path
 import argparse
 
+from minithon.icg import ICG
 from minithon.lexer import tokenize, Token
 from minithon.parser.main import Parser
 
@@ -67,6 +68,8 @@ def main() -> None:
     program = Parser(tokens, source_code).parse()
     if args.parse_tree:
         program.print_parse_tree()
+    intermediate_code = ICG().generate(program, source_code)
+    print(intermediate_code)
 
 if __name__ == "__main__":
     main()
