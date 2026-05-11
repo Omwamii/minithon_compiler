@@ -17,6 +17,8 @@ from minithon.parser.types import (
 
 
 class RuntimeError(CommonException):
+    """ICG-time runtime error with source-location reporting."""
+
     def __init__(
         self, msg: str, source_code: str, position: int, print_token=True
     ) -> None:
@@ -25,6 +27,8 @@ class RuntimeError(CommonException):
 
 @dataclass(frozen=True, slots=True)
 class Quadruple:
+    """Quadruple IR instruction in the form: (op, result, arg1, arg2)."""
+
     op: str
     result: str | None = None
     arg1: str | None = None
@@ -33,6 +37,7 @@ class Quadruple:
 
 class ICG:
     def __init__(self) -> None:
+        """Initialize ICG state used during quad generation."""
         self.quads: list[Quadruple] = []
         self.temp_count = 0
         self.label_count = 0
@@ -41,10 +46,12 @@ class ICG:
         self.source_code: str
 
     def generate(self, program: Program, source_code: str) -> str:
+        """Generate formatted quadruple IR text for a parsed `Program`."""
         quads = self.generate_quads(program, source_code)
         return self.format_quads(quads)
 
     def generate_quads(self, program: Program, source_code: str) -> list[Quadruple]:
+        """Lower a parsed `Program` into a list of quadruples."""
         self.quads = []
         self.temp_count = 0
         self.label_count = 0
@@ -57,6 +64,7 @@ class ICG:
         return self.quads
 
     def format_quads(self, quads: list[Quadruple]) -> str:
+        """Format quadruples as numbered lines `(OP, RESULT, ARG1, ARG2)`."""
         lines: list[str] = []
         for index, q in enumerate(quads, start=1):
             res = "" if q.result is None else q.result
@@ -66,6 +74,7 @@ class ICG:
         return "\n".join(lines)
 
     def block(self, block: Block) -> None:
+        """Generate quads for each statement in a block, in order."""
         for stmt in block.statements:
             if isinstance(stmt, AssignmentStatement):
                 self.assignment_stmt(stmt)
@@ -80,6 +89,7 @@ class ICG:
         self,
         stmt: GenericStatement,
     ) -> None:
+        """Handle simple statements (`break`/`continue`/`pass`) in a loop context."""
         if not self.loop_stack:
             return
         continue_label, break_label = self.loop_stack[-1]
@@ -89,6 +99,7 @@ class ICG:
             self.emit("goto", result=break_label)
 
     def while_stmt(self, stmt: ControlFlowStmtBlock) -> None:
+        """Lower a `while` statement into labels, conditional branch, body, and back-edge."""
         start_label = self.get_label()
         exit_label = self.get_label()
         self.emit("label", result=start_label)
@@ -107,6 +118,11 @@ class ICG:
         self.emit("label", result=exit_label)
 
     def if_stmt(self, stmt: IfStatementBlock) -> None:
+        """Lower an `if/elif/else` chain into conditional branches and join label.
+
+        Also performs a simple definite-assignment merge: after the chain, only variables
+        defined on all possible paths remain in `defined_vars`.
+        """
         # Definite-assignment handling:
         # - Each branch body must be analyzed starting from the same pre-if set.
         # - After the if-chain, only variables defined on all possible paths are kept.
@@ -158,20 +174,24 @@ class ICG:
         self.defined_vars = must_defined
 
     def get_label(self) -> str:
+        """Return a fresh label name (e.g. `L1`, `L2`, ...)."""
         self.label_count += 1
         return f"L{self.label_count}"
 
     def assignment_stmt(self, stmt: AssignmentStatement) -> None:
+        """Lower an assignment statement by evaluating the RHS and emitting `:=`."""
         value = self.expr_value(stmt.expression)
         self.emit(":=", arg1=value, result=stmt.identifier.lexeme)
         self.defined_vars.add(stmt.identifier.lexeme)
 
     def expr_value(self, expr: Expression | UnaryExpression) -> str:
+        """Compute a value for an expression, returning an identifier/literal or a temp name."""
         if isinstance(expr, UnaryExpression):
             return self.unary_expr_value(expr)
         return self.expression_value(expr)
 
     def unary_expr_value(self, expr: UnaryExpression) -> str:
+        """Lower a unary expression (currently `not`) into a temp-producing quad."""
         operand = self.expr_value(expr.operand)
         tmp = self.get_temp()
         op = expr.operator.lexeme
@@ -181,6 +201,7 @@ class ICG:
         return tmp
 
     def expression_value(self, expr: Expression) -> str:
+        """Lower a binary expression into a temp-producing quad (e.g. `+`, `<`, `==`)."""
         left = self.operand_value(expr.left_operand)
         if expr.right_operand is None or expr.operator is None:
             return left
@@ -195,6 +216,7 @@ class ICG:
         return tmp
 
     def operand_value(self, operand: Token | Expression | UnaryExpression) -> str:
+        """Convert an operand into a value string, raising on undefined identifiers."""
         if isinstance(operand, Token):
             if operand.type == TokenType.IDENTIFIER:
                 if operand.lexeme not in self.defined_vars:
@@ -208,6 +230,7 @@ class ICG:
         return self.expr_value(operand)
 
     def expression_temp(self, expr: Expression | UnaryExpression) -> str:
+        """Ensure `expr` is represented by a temp name (useful for branch conditions)."""
         # Ensures we always get a temp for conditionals, even if the expr is a bare identifier.
         value = self.expr_value(expr)
         if value.startswith("t"):
@@ -217,6 +240,7 @@ class ICG:
         return tmp
 
     def get_temp(self) -> str:
+        """Return a fresh temporary name (e.g. `t1`, `t2`, ...)."""
         self.temp_count += 1
         return f"t{self.temp_count}"
 
@@ -227,4 +251,5 @@ class ICG:
         arg1: str | None = None,
         arg2: str | None = None,
     ) -> None:
+        """Append one quadruple instruction to the output list."""
         self.quads.append(Quadruple(op=op, result=result, arg1=arg1, arg2=arg2))
