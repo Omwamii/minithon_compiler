@@ -107,6 +107,11 @@ class ICG:
         self.emit("label", result=exit_label)
 
     def if_stmt(self, stmt: IfStatementBlock) -> None:
+        # Definite-assignment handling:
+        # - Each branch body must be analyzed starting from the same pre-if set.
+        # - After the if-chain, only variables defined on all possible paths are kept.
+        pre_defined = set(self.defined_vars)
+
         exit_label = self.get_label()
         next_test_label: str | None = None
 
@@ -114,26 +119,43 @@ class ICG:
             stmt.if_statement,
             *stmt.elif_statements,
         ]
+        branch_out_sets: list[set[str]] = []
+
         for branch in branches:
             if next_test_label is not None:
                 self.emit("label", result=next_test_label)
+
+            # Condition is evaluated with the pre-if definitions.
+            self.defined_vars = set(pre_defined)
 
             next_test_label = self.get_label()
             branch.expression = cast(Expression, branch.expression)
             cond = self.expression_temp(branch.expression)
             self.emit("ifFalse", arg1=cond, result=next_test_label)
+
+            # Body is also analyzed as if entered directly from pre-if.
+            self.defined_vars = set(pre_defined)
             self.block(branch.block)
+            branch_out_sets.append(set(self.defined_vars))
             self.emit("goto", result=exit_label)
 
         if stmt.else_statement is not None:
             if next_test_label is not None:
                 self.emit("label", result=next_test_label)
+            self.defined_vars = set(pre_defined)
             self.block(stmt.else_statement.block)
+            branch_out_sets.append(set(self.defined_vars))
         else:
+            # No else means there's a path where none of the branch bodies execute.
             if next_test_label is not None:
                 self.emit("label", result=next_test_label)
+            branch_out_sets.append(set(pre_defined))
 
         self.emit("label", result=exit_label)
+
+        # Merge: keep only vars defined on all possible paths.
+        must_defined = set.intersection(*branch_out_sets) if branch_out_sets else pre_defined
+        self.defined_vars = must_defined
 
     def get_label(self) -> str:
         self.label_count += 1

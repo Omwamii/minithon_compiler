@@ -1,6 +1,6 @@
 import unittest
 
-from minithon.icg import ICG, Quadruple
+from minithon.icg import ICG, Quadruple, RuntimeError
 from minithon.lexer import tokenize
 from minithon.parser.main import Parser
 
@@ -56,6 +56,19 @@ class TestICGQuadruples(unittest.TestCase):
             Quadruple("label", "L1", None, None),
         ]
         self.assertEqual(quads, expected)
+
+    def test_undefined_variable_in_else_branch_is_detected(self) -> None:
+        source = (
+            "a = 2\n"
+            "while a > 35 :\n"
+            "    if a > 10:\n"
+            "        b = a + 1\n"
+            "    else:\n"
+            "        if b < 3:\n"
+            "            pass\n"
+        )
+        with self.assertRaises(RuntimeError):
+            compile_quads(source)
 
 
 if __name__ == "__main__":
