@@ -297,57 +297,113 @@ class Parser:
         )
 
     def expression(self) -> ExprType | None:
-        """Parse expression recursively (right recursion)."""
-        # E -> OrExpr | str
-        def match_ops() -> bool:
-            """Match any operator token supported by current expression parser."""
-            # Covers operator tails corresponding to:
-            # OrExpr' / AndExpr' / CompExpr' / AE' / T'
-            return (
-                self.match(TokenType.OR, False)
-                or self.match(TokenType.AND, False)
+        """Parse an expression with operator precedence (lowest -> highest).
+
+        Precedence implemented:
+        - or
+        - and
+        - comparisons: == != < <= > >=
+        - + -
+        - * / %
+        - unary: not
+        - primary: literals/identifiers/(...)
+        """
+
+        def primary() -> ExprType | Token | None:
+            if self.match(TokenType.LPAREN, False):
+                inner = self.expression()
+                if inner is None:
+                    self.raise_syntax_error("Expected expression")
+                if not self.match(TokenType.RPAREN, False):
+                    self.raise_syntax_error("Expected closing paranthesis")
+                return inner
+            if not self.factor():
+                return None
+            return self.current_token
+
+        def unary() -> ExprType | Token | None:
+            if self.match(TokenType.NOT, False):
+                operator = self.current_token
+                operand = unary()
+                if operand is None:
+                    self.raise_syntax_error("Expected expression")
+                return UnaryExpression(operator, operand if isinstance(operand, (Expression, UnaryExpression)) else Expression(operand))
+            return primary()
+
+        def multiplicative() -> ExprType | Token | None:
+            left = unary()
+            if left is None:
+                return None
+            while (
+                self.match(TokenType.MULTIPLY, False)
                 or self.match(TokenType.DIVIDE, False)
-                or self.match(TokenType.MULTIPLY, False)
-                or self.match(TokenType.ADD, False)
-                or self.match(TokenType.SUBTRACT, False)
-                or self.match(TokenType.EQUAL, False)
-                or self.match(TokenType.NOT_EQUAL, False)
                 or self.match(TokenType.MODULUS, False)
+            ):
+                operator = self.current_token
+                right = unary()
+                if right is None:
+                    self.raise_syntax_error("Expected expression")
+                left = Expression(left, operator, right)
+            return left
+
+        def additive() -> ExprType | Token | None:
+            left = multiplicative()
+            if left is None:
+                return None
+            while self.match(TokenType.ADD, False) or self.match(TokenType.SUBTRACT, False):
+                operator = self.current_token
+                right = multiplicative()
+                if right is None:
+                    self.raise_syntax_error("Expected expression")
+                left = Expression(left, operator, right)
+            return left
+
+        def comparison() -> ExprType | Token | None:
+            left = additive()
+            if left is None:
+                return None
+            while (
+                self.match(TokenType.EQUAL, False)
+                or self.match(TokenType.NOT_EQUAL, False)
                 or self.match(TokenType.GREATER_THAN, False)
                 or self.match(TokenType.LESS_THAN, False)
                 or self.match(TokenType.GREATER_THAN_OR_EQUAL, False)
                 or self.match(TokenType.LESS_THAN_OR_EQUAL, False)
-            )
+            ):
+                operator = self.current_token
+                right = additive()
+                if right is None:
+                    self.raise_syntax_error("Expected expression")
+                left = Expression(left, operator, right)
+            return left
 
-        # NotExpr -> not NotExpr
-        if self.match(TokenType.NOT, False):
-            operator = self.current_token
-            operand = self.expression()
-            if operand is None:
-                self.raise_syntax_error("Expected expression")
-            return UnaryExpression(operator, operand)
-
-        left_operand: Expression | UnaryExpression | Token
-        # F -> ( E )
-        if self.match(TokenType.LPAREN, False):
-            expression = self.expression()
-            if expression is None:
-                self.raise_syntax_error("Expected expression")
-            left_operand = expression
-            if not self.match(TokenType.RPAREN, False):
-                self.raise_syntax_error("Expected closing paranthesis")
-        else:
-            # F -> id | num (plus bool/string in current implementation)
-            if not self.factor():
+        def and_expr() -> ExprType | Token | None:
+            left = comparison()
+            if left is None:
                 return None
-            left_operand = self.current_token
-        operator = None
-        right_operand = None
-        if match_ops():
-            operator = self.current_token
-            right_operand = self.expression()
-            if right_operand is None:
-                self.raise_syntax_error("Expected expression")
+            while self.match(TokenType.AND, False):
+                operator = self.current_token
+                right = comparison()
+                if right is None:
+                    self.raise_syntax_error("Expected expression")
+                left = Expression(left, operator, right)
+            return left
 
-        expression = Expression(left_operand, operator, right_operand)
-        return expression
+        def or_expr() -> ExprType | Token | None:
+            left = and_expr()
+            if left is None:
+                return None
+            while self.match(TokenType.OR, False):
+                operator = self.current_token
+                right = and_expr()
+                if right is None:
+                    self.raise_syntax_error("Expected expression")
+                left = Expression(left, operator, right)
+            return left
+
+        parsed = or_expr()
+        if parsed is None:
+            return None
+        if isinstance(parsed, Token):
+            return Expression(parsed)
+        return parsed

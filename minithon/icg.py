@@ -135,19 +135,20 @@ class ICG:
             stmt.if_statement,
             *stmt.elif_statements,
         ]
+
         branch_out_sets: list[set[str]] = []
 
         for branch in branches:
             if next_test_label is not None:
                 self.emit("label", result=next_test_label)
 
-            # Condition is evaluated with the pre-if definitions.
+            # Condition is evaluated with the pre-if definitions (to avoid variables defined in different condition from leaking to the next branch)
             self.defined_vars = set(pre_defined)
 
             next_test_label = self.get_label()
             branch.expression = cast(Expression, branch.expression)
             cond = self.expression_temp(branch.expression)
-            self.emit("ifFalse", arg1=cond, result=next_test_label)
+            self.emit("ifFalse", arg1=cond, result=next_test_label) # The next elif or else
 
             # Body is also analyzed as if entered directly from pre-if.
             self.defined_vars = set(pre_defined)

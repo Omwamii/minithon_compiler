@@ -2,7 +2,11 @@ from typing import Any, Sequence
 import colorama
 from minithon.common import CommonException
 from minithon.lexer import Token
-from PrettyPrint import PrettyPrintTree
+
+try:
+    from PrettyPrint import PrettyPrintTree  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    PrettyPrintTree = None  # type: ignore[misc,assignment]
 
 
 class SyntaxError(CommonException):
@@ -169,6 +173,11 @@ class Program(NodeWrapper):
         if not pretty:
             print(self.node.dirty_tree_str())
             return
+        if PrettyPrintTree is None:
+            raise ModuleNotFoundError(
+                "PrettyPrint is not installed; call print_parse_tree(pretty=False) "
+                "or install the PrettyPrint dependency."
+            )
 
         def get_children(node_wrapper: NodeWrapper):
             return node_wrapper.node.children
@@ -176,7 +185,7 @@ class Program(NodeWrapper):
         def get_value(node_wrapper: NodeWrapper):
             return str(node_wrapper.node.value)
 
-        pt = PrettyPrintTree(get_children, get_value, color=colorama.Back.BLUE)  # type: ignore
+        pt = PrettyPrintTree(get_children, get_value, color=colorama.Back.BLUE)  # type: ignore[misc]
         pt(self)  # type: ignore
 
 

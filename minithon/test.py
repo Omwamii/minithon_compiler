@@ -1,4 +1,4 @@
-from PrettyPrint.PrintLinkedList.LinkedListPrinter import Callable
+from collections.abc import Callable
 from minithon.lexer import Token, tokenize
 from pprint import pprint
 from pathlib import Path
@@ -52,7 +52,7 @@ def test_parser(source_code: str | None = None, show_output=True) -> Program:
     program = parser.parse()
     if show_output:
         prt()
-        program.print_parse_tree()
+        program.print_parse_tree(pretty=False)
     return program
 
 
