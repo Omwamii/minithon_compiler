@@ -1,5 +1,5 @@
 a = 2
 b = 10
 x = 1
-while a > 35 and b < x:
+while (a > 35) and (b < x):
     b = a + 1
